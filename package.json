@@ -1,0 +1,23 @@
+{
+  "name": "",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "node --watch main.js"
+  },
+  "dependencies": {
+    "@0glabs/0g-ts-sdk": "^0.3.0",
+    "canvas": "^2.11.2",
+    "chalk": "^5.4.1",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.8.1",
+    "node-telegram-bot-api": "^0.64.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  },
+  "author": "",
+  "license": "ISC"
+}
