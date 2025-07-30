@@ -15,7 +15,7 @@ export class JaineDex extends BaseDex {
   }
 
   getLiquidityContract() {
-    return '0x3eC8A8705bE1D5ca90066b37ba62c4183B024ebf';
+    return '0x44f24B66b3BAa3A784dBeee9bFE602f15A2Cc5d9';
   }
 
   getSwapAbi() {
@@ -102,6 +102,60 @@ export class JaineDex extends BaseDex {
         ],
         "stateMutability": "payable",
         "type": "function"
+      },
+      {
+        "inputs": [
+          { "internalType": "address", "name": "tokenA", "type": "address" },
+          { "internalType": "address", "name": "tokenB", "type": "address" },
+          { "internalType": "uint24", "name": "fee", "type": "uint24" },
+          { "internalType": "uint160", "name": "sqrtPriceX96", "type": "uint160" }
+        ],
+        "name": "createAndInitializePoolIfNecessary",
+        "outputs": [
+          { "internalType": "address", "name": "pool", "type": "address" }
+        ],
+        "stateMutability": "payable",
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "name": "factory",
+        "outputs": [
+          { "internalType": "address", "name": "", "type": "address" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": true,
+            "internalType": "uint256",
+            "name": "tokenId",
+            "type": "uint256"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint128",
+            "name": "liquidity",
+            "type": "uint128"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "amount0",
+            "type": "uint256"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "amount1",
+            "type": "uint256"
+          }
+        ],
+        "name": "IncreaseLiquidity",
+        "type": "event"
       }
     ];
   }
@@ -177,53 +231,138 @@ export class JaineDex extends BaseDex {
     const amount1Desired = ethers.parseUnits(amount1.toString(), token1Decimal);
     const amount0Min = 0;
     const amount1Min = 0;
-    const fee = 500; 
-    const tickLower = -56040; 
-    const tickUpper = 55454; 
+    const fee = 100; 
+    const tickLower = -887272; 
+    const tickUpper = 887272; 
     const recipient = await signer.getAddress();
-    const deadline = Math.floor(Date.now() / 1000) + 600; 
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+
+    let token0Address, token1Address, token0Name, token1Name, amount0Final, amount1Final;
+    if (tokenPair.token0Address.toLowerCase() < tokenPair.token1Address.toLowerCase()) {
+      token0Address = tokenPair.token0Address;
+      token1Address = tokenPair.token1Address;
+      token0Name = tokenPair.token0Name;
+      token1Name = tokenPair.token1Name;
+      amount0Final = amount0Desired;
+      amount1Final = amount1Desired;
+    } else {
+      token0Address = tokenPair.token1Address;
+      token1Address = tokenPair.token0Address;
+      token0Name = tokenPair.token1Name;
+      token1Name = tokenPair.token0Name;
+      amount0Final = amount1Desired;
+      amount1Final = amount0Desired;
+    }
+
+    this.logger.info(`Sorted tokens: token0=${token0Address} (${token0Name}), token1=${token1Address} (${token1Name})`);
+    this.logger.info(`Liquidity parameters: fee=${fee}, tickLower=${tickLower}, tickUpper=${tickUpper}`);
+    this.logger.info(`Amounts: amount0Desired=${amount0Final.toString()}, amount1Desired=${amount1Final.toString()}`);
 
     const erc20AbiPath = path.resolve('ERC20_abi.json');
     const erc20Abi = JSON.parse(fs.readFileSync(erc20AbiPath, 'utf8'));
     
-    const token0Contract = new ethers.Contract(tokenPair.token0Address, erc20Abi, signer);
+    const token0Contract = new ethers.Contract(token0Address, erc20Abi, signer);
     let allowance0 = await token0Contract.allowance(recipient, this.getLiquidityContract());
     
-    if (allowance0 < amount0Desired) {
-      this.logger.info(`Approving ${tokenPair.token0Name} for JaineDEX liquidity contract...`);
-      const approve0Tx = await token0Contract.approve(this.getLiquidityContract(), amount0Desired);
+    if (allowance0 < amount0Final) {
+      this.logger.info(`Approving ${token0Name} for JaineDEX liquidity contract...`);
+      const approve0Tx = await token0Contract.approve(this.getLiquidityContract(), amount0Final);
       await approve0Tx.wait();
-      this.logger.info(`Approved ${tokenPair.token0Name} successfully`);
+      this.logger.info(`Approved ${token0Name} successfully`);
+      allowance0 = await token0Contract.allowance(recipient, this.getLiquidityContract());
+      this.logger.info(`New allowance for ${token0Name}: ${allowance0.toString()}`);
     }
 
-    const token1Contract = new ethers.Contract(tokenPair.token1Address, erc20Abi, signer);
+    const token1Contract = new ethers.Contract(token1Address, erc20Abi, signer);
     let allowance1 = await token1Contract.allowance(recipient, this.getLiquidityContract());
     
-    if (allowance1 < amount1Desired) {
-      this.logger.info(`Approving ${tokenPair.token1Name} for JaineDEX liquidity contract...`);
-      const approve1Tx = await token1Contract.approve(this.getLiquidityContract(), amount1Desired);
+    if (allowance1 < amount1Final) {
+      this.logger.info(`Approving ${token1Name} for JaineDEX liquidity contract...`);
+      const approve1Tx = await token1Contract.approve(this.getLiquidityContract(), amount1Final);
       await approve1Tx.wait();
-      this.logger.info(`Approved ${tokenPair.token1Name} successfully`);
+      this.logger.info(`Approved ${token1Name} successfully`);
+      allowance1 = await token1Contract.allowance(recipient, this.getLiquidityContract());
+      this.logger.info(`New allowance for ${token1Name}: ${allowance1.toString()}`);
+    }
+
+    if (allowance0 < amount0Final) {
+      throw new Error(`Insufficient allowance for ${token0Name}: ${allowance0} < ${amount0Final}`);
+    }
+    if (allowance1 < amount1Final) {
+      throw new Error(`Insufficient allowance for ${token1Name}: ${allowance1} < ${amount1Final}`);
     }
 
     const params = {
-      token0: tokenPair.token0Address,
-      token1: tokenPair.token1Address,
+      token0: token0Address,
+      token1: token1Address,
       fee,
       tickLower,
       tickUpper,
-      amount0Desired,
-      amount1Desired,
+      amount0Desired: amount0Final,
+      amount1Desired: amount1Final,
       amount0Min,
       amount1Min,
       recipient,
       deadline
     };
 
+    // this.logger.info(`Mint params: ${JSON.stringify({
+    //   token0: params.token0,
+    //   token1: params.token1,
+    //   fee: params.fee,
+    //   tickLower: params.tickLower,
+    //   tickUpper: params.tickUpper,
+    //   amount0Desired: params.amount0Desired.toString(),
+    //   amount1Desired: params.amount1Desired.toString(),
+    //   amount0Min: params.amount0Min.toString(),
+    //   amount1Min: params.amount1Min.toString(),
+    //   recipient: params.recipient,
+    //   deadline: params.deadline
+    // }, null, 2)}`);
+
     const contract = new ethers.Contract(this.getLiquidityContract(), this.getLiquidityAbi(), signer);
     let tx, receipt;
     
     try {
+      try {
+        const factoryAbi = [
+          {
+            "inputs": [
+              { "internalType": "address", "name": "tokenA", "type": "address" },
+              { "internalType": "address", "name": "tokenB", "type": "address" },
+              { "internalType": "uint24", "name": "fee", "type": "uint24" }
+            ],
+            "name": "getPool",
+            "outputs": [{ "internalType": "address", "name": "pool", "type": "address" }],
+            "stateMutability": "view",
+            "type": "function"
+          }
+        ];
+        
+        const factoryAddress = await contract.factory();
+        const factoryContract = new ethers.Contract(factoryAddress, factoryAbi, signer);
+        const poolAddress = await factoryContract.getPool(token0Address, token1Address, fee);
+        
+        if (poolAddress === '0x0000000000000000000000000000000000000000') {
+          this.logger.info(`Pool doesn't exist, creating pool for ${token0Name}/${token1Name} with fee ${fee}`);
+          const createPoolTx = await contract.createAndInitializePoolIfNecessary(
+            token0Address,
+            token1Address,
+            fee,
+            ethers.parseUnits('1', 18) // sqrt price x96
+          );
+          await createPoolTx.wait();
+          this.logger.info(`Pool created successfully`);
+        } else {
+          this.logger.info(`Pool exists at: ${poolAddress}`);
+        }
+      } catch (poolError) {
+        this.logger.warn(`Could not check/create pool: ${poolError.message}`);
+      }
+
+      const encodedData = contract.interface.encodeFunctionData('mint', [params]);
+      // this.logger.info(`Encoded mint data: ${encodedData}`);
+      
       tx = await contract.mint(params, { value: 0 });
       this.logger.info(`JaineDEX liquidity transaction sent: ${tx.hash}, waiting for confirmation...`);
       
@@ -251,21 +390,22 @@ export class JaineDex extends BaseDex {
       }
       
       this.logger.info(`✅ JaineDEX add liquidity success! Token ID: ${tokenId}, Liquidity: ${liquidity}`);
-      this.logger.info(`Amount0: ${ethers.formatUnits(actualAmount0 || amount0Desired, token0Decimal)} ${tokenPair.token0Name}`);
-      this.logger.info(`Amount1: ${ethers.formatUnits(actualAmount1 || amount1Desired, token1Decimal)} ${tokenPair.token1Name}`);
+      this.logger.info(`Amount0: ${ethers.formatUnits(actualAmount0 || amount0Final, token0Decimal)} ${token0Name}`);
+      this.logger.info(`Amount1: ${ethers.formatUnits(actualAmount1 || amount1Final, token1Decimal)} ${token1Name}`);
       
       return {
         tokenId: tokenId?.toString() || 'unknown',
         liquidity: liquidity?.toString() || 'unknown',
-        token0: tokenPair.token0Name,
-        token1: tokenPair.token1Name,
-        amount0: ethers.formatUnits(actualAmount0 || amount0Desired, token0Decimal),
-        amount1: ethers.formatUnits(actualAmount1 || amount1Desired, token1Decimal),
+        token0: token0Name,
+        token1: token1Name,
+        amount0: ethers.formatUnits(actualAmount0 || amount0Final, token0Decimal),
+        amount1: ethers.formatUnits(actualAmount1 || amount1Final, token1Decimal),
         txHash: tx.hash,
         receipt
       };
     } catch (error) {
       this.logger.error(`JaineDEX add liquidity failed: ${error.message}`);
+      this.logger.error(`Error name: ${error.name}, Error code: ${error.code}`);
       throw error;
     }
   }

@@ -11,9 +11,9 @@ export class AutomationManager {
     this.features = [
       new UploadFeature(),
       new SwapFeature('jaine', 3),   
-      // new AddLiquidityFeature('jaine', 1),  
+      new AddLiquidityFeature('jaine', 3),  
       new SwapFeature('zer0', 2),       
-      new AddLiquidityFeature('zer0', 2)  
+      // new AddLiquidityFeature('zer0', 2)  
     ];
     
     this.stats = {
